@@ -5,9 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/projectdiscovery/nuclei/v3/pkg/model/types/severity"
 	"github.com/projectdiscovery/nuclei/v3/pkg/templates/types"
-	"github.com/stretchr/testify/require"
 )
 
 func TestFilterMatches(t *testing.T) {
@@ -57,12 +58,111 @@ func TestFilterMatches(t *testing.T) {
 		require.False(t, filter.Matches(metadata))
 	})
 
-	t.Run("Include tags overrides exclude", func(t *testing.T) {
+	t.Run("Include tags overrides same exclude tag", func(t *testing.T) {
+		filter := &Filter{
+			ExcludeTags: []string{"cve"},
+			IncludeTags: []string{"cve"},
+		}
+		require.True(t, filter.Matches(metadata))
+	})
+
+	t.Run("Include tags does not override unrelated exclude tags", func(t *testing.T) {
 		filter := &Filter{
 			ExcludeTags: []string{"rce"},
 			IncludeTags: []string{"cve"},
 		}
-		require.True(t, filter.Matches(metadata))
+		require.False(t, filter.Matches(metadata))
+	})
+
+	t.Run("Include tags does not override other exclusions", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			filter *Filter
+		}{
+			{
+				name: "exclude id",
+				filter: &Filter{
+					ExcludeIDs:  []string{"test-template-1"},
+					IncludeTags: []string{"cve"},
+				},
+			},
+			{
+				name: "exclude template",
+				filter: &Filter{
+					ExcludeTemplates: []string{"/templates/cves/"},
+					IncludeTags:      []string{"cve"},
+				},
+			},
+			{
+				name: "exclude severity",
+				filter: &Filter{
+					ExcludeSeverities: []severity.Severity{severity.Critical},
+					IncludeTags:       []string{"cve"},
+				},
+			},
+			{
+				name: "exclude protocol",
+				filter: &Filter{
+					ExcludeProtocolTypes: []types.ProtocolType{types.HTTPProtocol},
+					IncludeTags:          []string{"cve"},
+				},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				require.False(t, tt.filter.Matches(metadata))
+			})
+		}
+	})
+
+	t.Run("Include tags does not override normal includes", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			filter *Filter
+		}{
+			{
+				name: "author",
+				filter: &Filter{
+					Authors:     []string{"unknown"},
+					IncludeTags: []string{"cve"},
+				},
+			},
+			{
+				name: "tag",
+				filter: &Filter{
+					Tags:        []string{"xss"},
+					IncludeTags: []string{"cve"},
+				},
+			},
+			{
+				name: "id",
+				filter: &Filter{
+					IDs:         []string{"other-template"},
+					IncludeTags: []string{"cve"},
+				},
+			},
+			{
+				name: "severity",
+				filter: &Filter{
+					Severities:  []severity.Severity{severity.High},
+					IncludeTags: []string{"cve"},
+				},
+			},
+			{
+				name: "protocol",
+				filter: &Filter{
+					ProtocolTypes: []types.ProtocolType{types.DNSProtocol},
+					IncludeTags:   []string{"cve"},
+				},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				require.False(t, tt.filter.Matches(metadata))
+			})
+		}
 	})
 
 	t.Run("ID filter - exact match", func(t *testing.T) {
@@ -196,8 +296,8 @@ func TestMatchesID(t *testing.T) {
 		expected bool
 	}{
 		{"exact match", "CVE-2021-1234", "CVE-2021-1234", true},
-		{"wildcard prefix", "CVE-2021-1234", "CVE-*", true},
-		{"wildcard suffix", "CVE-2021-1234", "*-1234", true},
+		{"wildcard suffix", "CVE-2021-1234", "CVE-*", true},
+		{"wildcard prefix", "CVE-2021-1234", "*-1234", true},
 		{"wildcard middle", "CVE-2021-1234", "CVE-*-1234", true},
 		{"no match", "CVE-2021-1234", "CVE-2022-*", false},
 		{"partial no match", "CVE-2021-1234", "CVE-2021-12", false},
@@ -207,7 +307,9 @@ func TestMatchesID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := matchesID(tt.id, tt.pattern)
+			filter := &Filter{IDs: []string{tt.pattern}}
+			filter.Compile()
+			result := filter.matchesIncludeID(tt.id)
 			require.Equal(t, tt.expected, result)
 		})
 	}

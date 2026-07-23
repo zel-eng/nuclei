@@ -19,10 +19,9 @@ import (
 	"time"
 
 	"github.com/julienschmidt/httprouter"
-	"gopkg.in/yaml.v2"
-
 	"github.com/projectdiscovery/nuclei/v3/internal/tests/testutils"
 	"github.com/projectdiscovery/nuclei/v3/pkg/utils/json"
+	"github.com/projectdiscovery/nuclei/v3/pkg/utils/yaml"
 	"github.com/projectdiscovery/retryablehttp-go"
 	"github.com/projectdiscovery/utils/errkit"
 	logutil "github.com/projectdiscovery/utils/log"
@@ -830,7 +829,7 @@ func (h *httpRawUnsafePath) Execute(filepath string) error {
 	}
 
 	actual := []string{}
-	for _, v := range strings.Split(results, "\n") {
+	for v := range strings.SplitSeq(results, "\n") {
 		if strings.Contains(v, "GET") {
 			parts := strings.Fields(v)
 			if len(parts) == 3 {
@@ -878,7 +877,7 @@ func (h *httpPaths) Execute(filepath string) error {
 	}
 
 	actual := []string{}
-	for _, v := range strings.Split(results, "\n") {
+	for v := range strings.SplitSeq(results, "\n") {
 		if strings.Contains(v, "GET") {
 			parts := strings.Fields(v)
 			if len(parts) == 3 {
@@ -1395,7 +1394,7 @@ func (h *httpVariableDSLFunction) Execute(filePath string) error {
 	}
 
 	actual := []string{}
-	for _, v := range strings.Split(results, "\n") {
+	for v := range strings.SplitSeq(results, "\n") {
 		if strings.Contains(v, "GET") {
 			parts := strings.Fields(v)
 			if len(parts) == 3 {
@@ -1764,7 +1763,7 @@ func (h *httpRawPathSingleSlash) Execute(filepath string) error {
 	}
 
 	var actual string
-	for _, v := range strings.Split(results, "\n") {
+	for v := range strings.SplitSeq(results, "\n") {
 		if strings.Contains(v, "GET") {
 			parts := strings.Fields(v)
 			if len(parts) == 3 {
@@ -1789,7 +1788,7 @@ func (h *httpRawUnsafePathSingleSlash) Execute(filepath string) error {
 	}
 
 	var actual string
-	for _, v := range strings.Split(results, "\n") {
+	for v := range strings.SplitSeq(results, "\n") {
 		if strings.Contains(v, "GET") {
 			parts := strings.Fields(v)
 			if len(parts) == 3 {

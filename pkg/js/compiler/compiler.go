@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Mzack9999/goja"
+	"github.com/projectdiscovery/goja"
 	"github.com/projectdiscovery/utils/errkit"
 	stringsutil "github.com/projectdiscovery/utils/strings"
 
@@ -45,9 +45,8 @@ type ExecuteOptions struct {
 
 	TimeoutVariants *types.Timeouts
 
-	// ProxyURL is the HTTP proxy URL to use for network connections via
-	// HTTP CONNECT. SOCKS proxies are handled by the fastdialer layer
-	// and should not be passed here.
+	// ProxyURL is the HTTP(S) proxy URL for JS net dials via HTTP CONNECT.
+	// SOCKS proxies are handled by fastdialer and must not be set here.
 	ProxyURL string
 
 	// Manually exported objects

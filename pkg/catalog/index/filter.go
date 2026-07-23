@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/projectdiscovery/nuclei/v3/pkg/model/types/severity"
 	"github.com/projectdiscovery/nuclei/v3/pkg/templates/types"
@@ -14,10 +15,14 @@ import (
 // Inclusion fields (e.g., Authors, Tags, IDs, Severities, ProtocolTypes) use
 // AND logic across different filter types and OR logic within each type.
 // Exclusion fields (e.g., ExcludeTags, ExcludeIDs, ExcludeSeverities,
-// ExcludeProtocolTypes) take precedence over inclusion fields. Additionally,
-// IncludeTemplates and IncludeTags can force inclusion of templates even if
-// they match exclusion criteria.
+// ExcludeProtocolTypes) take precedence over normal inclusion fields.
+// IncludeTags can force inclusion only for the same excluded tag; other
+// exclusion criteria and unrelated excluded tags still apply. IncludeTemplates
+// remains an explicit template override.
 type Filter struct {
+	// once ensures that IDs and ExcludedIDs are compiled the first time Matches is called.
+	once sync.Once
+
 	// Authors to include.
 	Authors []string
 
@@ -27,14 +32,26 @@ type Filter struct {
 	// ExcludeTags to exclude (takes precedence over Tags).
 	ExcludeTags []string
 
-	// IncludeTags to force include even if excluded.
+	// IncludeTags to force include matching tag exclusions.
 	IncludeTags []string
 
-	// IDs to include (supports wildcards, OR logic).
+	// IDs to include (supports wildcards).
 	IDs []string
+
+	// includeIDs is a map of IDs for a quick lookup.
+	includeIDs map[string]struct{}
+
+	// includeIDPatterns are the patterns extracted from IDs.
+	includeIDPatterns []string
 
 	// ExcludeIDs to exclude (supports wildcards).
 	ExcludeIDs []string
+
+	// excludeIDs is a map of ExcludeIDs for a quick lookup.
+	excludeIDs map[string]struct{}
+
+	// excludeIDPatterns are the patterns extracted from ExcludeIDs.
+	excludeIDPatterns []string
 
 	// IncludeTemplates paths to force include even if excluded.
 	IncludeTemplates []string
@@ -57,7 +74,9 @@ type Filter struct {
 
 // Matches checks if metadata matches the filter criteria.
 func (f *Filter) Matches(m *Metadata) bool {
-	if f.isForcedInclude(m) {
+	f.once.Do(f.Compile)
+
+	if f.matchesIncludeTemplate(m) {
 		return true
 	}
 
@@ -72,19 +91,13 @@ func (f *Filter) Matches(m *Metadata) bool {
 	return true
 }
 
-// isForcedInclude checks if template is forced to be included.
-func (f *Filter) isForcedInclude(m *Metadata) bool {
+// matchesIncludeTemplate checks if template is explicitly included by path.
+func (f *Filter) matchesIncludeTemplate(m *Metadata) bool {
 	if len(f.IncludeTemplates) > 0 {
 		for _, includePath := range f.IncludeTemplates {
 			if matchesPath(m.FilePath, includePath) {
 				return true
 			}
-		}
-	}
-
-	if len(f.IncludeTags) > 0 {
-		if slices.ContainsFunc(f.IncludeTags, m.HasTag) {
-			return true
 		}
 	}
 
@@ -102,16 +115,16 @@ func (f *Filter) isExcluded(m *Metadata) bool {
 	}
 
 	if len(f.ExcludeTags) > 0 {
-		if slices.ContainsFunc(f.ExcludeTags, m.HasTag) {
-			return true
+		for _, excludeTag := range f.ExcludeTags {
+			if m.HasTag(excludeTag) && !slices.Contains(f.IncludeTags, excludeTag) {
+				return true
+			}
 		}
 	}
 
 	if len(f.ExcludeIDs) > 0 {
-		for _, excludeID := range f.ExcludeIDs {
-			if matchesID(m.ID, excludeID) {
-				return true
-			}
+		if f.matchesExcludeID(m.ID) {
+			return true
 		}
 	}
 
@@ -148,14 +161,7 @@ func (f *Filter) matchesIncludes(m *Metadata) bool {
 	}
 
 	if len(f.IDs) > 0 {
-		matched := false
-		for _, id := range f.IDs {
-			if matchesID(m.ID, id) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
+		if !f.matchesIncludeID(m.ID) {
 			return false
 		}
 	}
@@ -175,19 +181,64 @@ func (f *Filter) matchesIncludes(m *Metadata) bool {
 	return true
 }
 
-// matchesID checks if template ID matches pattern (supports wildcards).
-func matchesID(templateID, pattern string) bool {
-	// Convert to lowercase for case-insensitive matching
-	templateID = strings.ToLower(templateID)
-	pattern = strings.ToLower(pattern)
+// Compile pre-processes IDs and ExcludeIDs into fast lookup structures.
+// The first time Matches is called, this is called automatically.
+// If IDs or ExcludeIDs are modified after calling Matches, this must be called manually.
+// This method is not thread-safe, so make sure noone is using the filter when calling it.
+func (f *Filter) Compile() {
+	f.includeIDPatterns = nil
+	f.includeIDs = make(map[string]struct{}, len(f.IDs))
+	for _, p := range f.IDs {
+		idOrPattern := strings.ToLower(p)
+		if strings.ContainsAny(idOrPattern, "*?[") {
+			f.includeIDPatterns = append(f.includeIDPatterns, idOrPattern)
+		} else {
+			f.includeIDs[idOrPattern] = struct{}{}
+		}
+	}
 
-	if templateID == pattern {
+	f.excludeIDPatterns = nil
+	f.excludeIDs = make(map[string]struct{}, len(f.ExcludeIDs))
+	for _, p := range f.ExcludeIDs {
+		idOrPattern := strings.ToLower(p)
+		if strings.ContainsAny(idOrPattern, "*?[") {
+			f.excludeIDPatterns = append(f.excludeIDPatterns, idOrPattern)
+		} else {
+			f.excludeIDs[idOrPattern] = struct{}{}
+		}
+	}
+}
+
+// matchesIncludeID reports whether templateID matches any entry in includeIDs or includeIDPatterns.
+func (f *Filter) matchesIncludeID(templateID string) bool {
+	templateID = strings.ToLower(templateID)
+	if _, ok := f.includeIDs[templateID]; ok {
 		return true
 	}
 
-	matched, _ := filepath.Match(pattern, templateID)
+	for _, pattern := range f.includeIDPatterns {
+		if matched, _ := filepath.Match(pattern, templateID); matched {
+			return true
+		}
+	}
 
-	return matched
+	return false
+}
+
+// matchesExcludeID reports whether templateID matches any entry in excludeIDs or excludeIDPatterns.
+func (f *Filter) matchesExcludeID(templateID string) bool {
+	templateID = strings.ToLower(templateID)
+	if _, ok := f.excludeIDs[templateID]; ok {
+		return true
+	}
+
+	for _, pattern := range f.excludeIDPatterns {
+		if matched, _ := filepath.Match(pattern, templateID); matched {
+			return true
+		}
+	}
+
+	return false
 }
 
 // matchesPath checks if template path matches pattern.
@@ -316,6 +367,10 @@ func (f *Filter) String() string {
 
 	if len(f.IDs) > 0 {
 		parts = append(parts, "ids="+strings.Join(f.IDs, ","))
+	}
+
+	if len(f.ExcludeIDs) > 0 {
+		parts = append(parts, "exclude-ids="+strings.Join(f.ExcludeIDs, ","))
 	}
 
 	if len(f.Severities) > 0 {

@@ -492,12 +492,16 @@ func (p *EntityParser) extractVarsNConstants() {
 					if len(spec.Values) == 0 {
 						continue
 					}
+					value := "undefined"
+					if basicLit, ok := spec.Values[0].(*ast.BasicLit); ok {
+						value = basicLit.Value
+					}
 					// get comments or description
 					p.vars = append(p.vars, Entity{
 						Name:        spec.Names[0].Name,
 						Type:        "const",
 						Description: strings.TrimSpace(spec.Comment.Text()),
-						Value:       spec.Values[0].(*ast.BasicLit).Value,
+						Value:       value,
 					})
 				}
 			}
@@ -568,8 +572,7 @@ func updateFuncWithConstructorSig(sig string, f Function) Function {
 	sig = strings.TrimPrefix(sig, "constructor(")
 	sig = strings.TrimSuffix(sig, ")")
 	// split by comma
-	args := strings.Split(sig, ",")
-	for _, arg := range args {
+	for arg := range strings.SplitSeq(sig, ",") {
 		arg = strings.TrimSpace(arg)
 		// check if it is optional
 		typeData := strings.Split(arg, ":")

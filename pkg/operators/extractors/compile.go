@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Knetic/govaluate"
 	"github.com/itchyny/gojq"
+	"github.com/projectdiscovery/govaluate"
 	"github.com/projectdiscovery/nuclei/v3/pkg/operators/cache"
 	"github.com/projectdiscovery/nuclei/v3/pkg/operators/common/dsl"
 )
@@ -19,6 +19,11 @@ func (e *Extractor) CompileExtractors() error {
 		return fmt.Errorf("unknown extractor type specified: %s", e.Type)
 	}
 	e.extractorType = computedType
+
+	if e.extractorType == RegexExtractor && e.RegexGroup < 0 {
+		return fmt.Errorf("regex extractor group must be >= 0, got %d", e.RegexGroup)
+	}
+
 	// Compile the regexes
 	for _, regex := range e.Regex {
 		if cached, err := cache.Regex().GetIFPresent(regex); err == nil && cached != nil {
