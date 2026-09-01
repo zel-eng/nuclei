@@ -52,6 +52,10 @@ import (
 	urlutil "github.com/projectdiscovery/utils/url"
 )
 
+type contextKey string
+
+const authInProgressKey contextKey = "authInProgress"
+
 const (
 	defaultMaxWorkers = 150
 	// max unique errors to store & combine
@@ -758,9 +762,25 @@ func (request *Request) executeRequest(input *contextargs.Context, generatedRequ
 		}
 	}
 
+	origCtx := generatedRequest.request.Context()
 	// === apply auth strategies ===
 	if generatedRequest.request != nil && !request.SkipSecretFile {
-		generatedRequest.ApplyAuth(request.options.AuthProvider)
+		// Check if auth is already in progress to prevent recursive ApplyAuth
+		ctx := generatedRequest.request.Context()
+		if authInProgress, ok := ctx.Value(authInProgressKey).(bool); ok && authInProgress {
+			// Auth already in progress, skip re-applying
+			gologger.Debug().Msgf("[%s] Skipping auth re-application for %s (already in progress)", request.options.TemplateID, generatedRequest.URL())
+		} else {
+			// Mark auth as in progress before applying
+			newCtx := context.WithValue(ctx, authInProgressKey, true)
+			// Clone the request with the new context
+			reqWithCtx := generatedRequest.request.WithContext(newCtx)
+			// Update the generatedRequest with the new request
+			generatedRequest.request = reqWithCtx
+			// Apply auth (which may call this function recursively)
+			generatedRequest.ApplyAuth(request.options.AuthProvider)
+			generatedRequest.request = generatedRequest.request.WithContext(origCtx)
+		}
 	}
 
 	var formedURL string
