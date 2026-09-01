@@ -86,6 +86,61 @@ func TestMakeRequestFromModalTrimSuffixSlash(t *testing.T) {
 	require.Equal(t, "https://example.com/test/?query=example", req.request.String(), "could not get correct request path")
 }
 
+func TestMakeRequestPreservesEmptyQueryEquals(t *testing.T) {
+	options := testutils.DefaultOptions
+
+	testutils.Init(options)
+	templateID := "testing-http-empty-query-equals"
+	request := &Request{
+		ID:     templateID,
+		Name:   "testing",
+		Path:   []string{"{{BaseURL}}/search?xxxx=&next=1"},
+		Method: HTTPMethodTypeHolder{MethodType: HTTPGet},
+	}
+	executerOpts := testutils.NewMockExecuterOptions(options, &testutils.TemplateInfo{
+		ID:   templateID,
+		Info: model.Info{SeverityHolder: severity.Holder{Severity: severity.Low}, Name: "test"},
+	})
+	err := request.Compile(executerOpts)
+	require.Nil(t, err, "could not compile http request")
+
+	generator := request.newGenerator(false)
+	inputData, payloads, _ := generator.nextValue()
+	req, err := generator.Make(context.Background(), contextargs.NewWithInput(context.Background(), "https://example.com"), inputData, payloads, map[string]interface{}{})
+	require.Nil(t, err, "could not make http request")
+	require.Equal(t, "https://example.com/search?xxxx=&next=1", req.request.String(), "empty query parameter must retain equals sign")
+}
+
+func TestMakeSelfContainedRequestPreservesEmptyQueryEquals(t *testing.T) {
+	templateID := "testing-self-contained-empty-query-equals"
+	options := testutils.DefaultOptions.Copy()
+	options.ExecutionId = templateID
+
+	testutils.Init(options)
+	t.Cleanup(func() {
+		testutils.Cleanup(options)
+	})
+	request := &Request{
+		ID:            templateID,
+		Name:          "testing",
+		SelfContained: true,
+		Path:          []string{"https://93.184.216.34/search?xxxx=&next=1"},
+		Method:        HTTPMethodTypeHolder{MethodType: HTTPGet},
+	}
+	executerOpts := testutils.NewMockExecuterOptions(options, &testutils.TemplateInfo{
+		ID:   templateID,
+		Info: model.Info{SeverityHolder: severity.Holder{Severity: severity.Low}, Name: "test"},
+	})
+	err := request.Compile(executerOpts)
+	require.Nil(t, err, "could not compile self-contained http request")
+
+	generator := request.newGenerator(false)
+	inputData, payloads, _ := generator.nextValue()
+	req, err := generator.Make(context.Background(), contextargs.NewWithInput(context.Background(), ""), inputData, payloads, map[string]interface{}{})
+	require.Nil(t, err, "could not make self-contained http request")
+	require.Equal(t, "https://93.184.216.34/search?xxxx=&next=1", req.request.String(), "self-contained empty query parameter must retain equals sign")
+}
+
 func TestMakeRequestFromRawWithPayloads(t *testing.T) {
 	options := testutils.DefaultOptions
 
