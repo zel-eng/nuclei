@@ -139,6 +139,12 @@ func (s *session) prepareCommon() {
 
 	s.config.runtime.SetContextValue("executionId", s.config.opts.ExecutionId)
 	s.config.runtime.SetContextValue("ctx", s.config.ctx)
+	if s.config.opts.TimeoutVariants != nil {
+		s.config.runtime.SetContextValue("timeoutVariants", s.config.opts.TimeoutVariants)
+	}
+	if s.config.opts.ProxyURL != "" {
+		s.config.runtime.SetContextValue("proxyURL", s.config.opts.ProxyURL)
+	}
 	enableRequire(s.config.runtime)
 }
 
@@ -207,6 +213,8 @@ func (s *session) cleanupCommon() {
 	}
 	s.config.runtime.RemoveContextValue("executionId")
 	s.config.runtime.RemoveContextValue("ctx")
+	s.config.runtime.RemoveContextValue("timeoutVariants")
+	s.config.runtime.RemoveContextValue("proxyURL")
 }
 
 func (s *session) cleanupPath() {

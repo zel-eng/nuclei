@@ -45,6 +45,10 @@ type ExecuteOptions struct {
 
 	TimeoutVariants *types.Timeouts
 
+	// ProxyURL is the HTTP(S) proxy URL for JS net dials via HTTP CONNECT.
+	// SOCKS proxies are handled by fastdialer and must not be set here.
+	ProxyURL string
+
 	// Manually exported objects
 	exports map[string]interface{}
 }
