@@ -24,6 +24,7 @@ import (
 	"github.com/projectdiscovery/nuclei/v3/pkg/protocols/http/httpclientpool"
 	"github.com/projectdiscovery/nuclei/v3/pkg/protocols/network/networkclientpool"
 	"github.com/projectdiscovery/nuclei/v3/pkg/utils/json"
+	"github.com/projectdiscovery/nuclei/v3/pkg/utils/schema"
 	"github.com/projectdiscovery/nuclei/v3/pkg/utils/stats"
 	"github.com/projectdiscovery/rawhttp"
 	fileutil "github.com/projectdiscovery/utils/file"
@@ -245,23 +246,21 @@ type Request struct {
 	GlobalMatchers bool `yaml:"global-matchers,omitempty" json:"global-matchers,omitempty" jsonschema:"title=global matchers,description=marks matchers as static and applies globally to all result events from other templates"`
 }
 
-func (e Request) JSONSchemaExtend(schema *jsonschema.Schema) {
-	headersSchema, ok := schema.Properties.Get("headers")
+func (e Request) JSONSchemaExtend(base *jsonschema.Schema) {
+	schema.ExtendSchema(httpRequestMetadata, base)
+	schema.ApplyAnyOfRequired(httpRequestAnyOfRequired, base)
+
+	// Headers accept string/int/bool values in templates.
+	headersSchema, ok := base.Properties.Get("headers")
 	if !ok {
 		return
 	}
 	headersSchema.PatternProperties = map[string]*jsonschema.Schema{
 		".*": {
 			OneOf: []*jsonschema.Schema{
-				{
-					Type: "string",
-				},
-				{
-					Type: "integer",
-				},
-				{
-					Type: "boolean",
-				},
+				{Type: "string"},
+				{Type: "integer"},
+				{Type: "boolean"},
 			},
 		},
 	}
@@ -293,6 +292,26 @@ var RequestPartDefinitions = map[string]string{
 	"all":                   "HTTP response body + headers",
 	"cookies_from_response": "HTTP response cookies in name:value format",
 	"headers_from_response": "HTTP response headers in name:value format",
+	"tls_version":           "TLS version negotiated for the HTTP connection",
+	"cipher":                "TLS cipher suite negotiated for the HTTP connection",
+	"sni":                   "SNI value used in the TLS handshake",
+	"subject_cn":            "Leaf certificate subject common name",
+	"subject_dn":            "Leaf certificate subject distinguished name",
+	"subject_an":            "Leaf certificate subject alternative names",
+	"subject_org":           "Leaf certificate subject organization",
+	"issuer_cn":             "Leaf certificate issuer common name",
+	"issuer_dn":             "Leaf certificate issuer distinguished name",
+	"issuer_org":            "Leaf certificate issuer organization",
+	"serial":                "Leaf certificate serial number",
+	"fingerprint_hash":      "Leaf certificate fingerprint hashes (md5/sha1/sha256)",
+	"not_before":            "Leaf certificate not-before timestamp",
+	"not_after":             "Leaf certificate not-after timestamp",
+	"expired":               "Whether the leaf certificate has expired",
+	"self_signed":           "Whether the leaf certificate is self-signed",
+	"mismatched":            "Whether the leaf certificate does not match the SNI hostname",
+	"domains":               "Deduplicated domains from subject CN and SANs",
+	"wildcard_certificate":  "Whether the leaf certificate is a wildcard certificate",
+	"emails":                "Email addresses embedded in the leaf certificate",
 }
 
 // GetID returns the unique ID of the request if any.
